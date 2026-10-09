@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>IT Service Request Desk</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen">
+
+  <!-- Header -->
+  <header class="bg-indigo-700 text-white shadow-md">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+      <div class="flex items-center space-x-3">
+        <span class="text-2xl font-black tracking-tight">IT Desk</span>
+        <span class="text-xs bg-indigo-500 px-2 py-1 rounded text-white font-medium uppercase tracking-wider">Service Portal</span>
+      </div>
+      <a href="/docs" target="_blank" class="text-xs bg-white text-indigo-700 px-3 py-1.5 rounded font-semibold hover:bg-indigo-50 transition">
+        Swagger API Docs ↗
+      </a>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- KPI / Metrics Bar -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="metrics-bar">
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Total Tickets</p>
+        <p class="text-2xl font-bold text-slate-900 mt-1" id="metric-total">0</p>
+      </div>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Open Tickets</p>
+        <p class="text-2xl font-bold text-blue-600 mt-1" id="metric-open">0</p>
+      </div>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase">Unassigned</p>
+        <p class="text-2xl font-bold text-amber-500 mt-1" id="metric-unassigned">0</p>
+      </div>
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <p class="text-xs font-semibold text-slate-500 uppercase">SLA Breached</p>
+        <p class="text-2xl font-bold text-rose-600 mt-1" id="metric-breached">0</p>
+      </div>
+    </div>
+
+    <!-- Main Grid: Create Request + Tickets Table -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+      <!-- Left Column: Create Request Form -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-1 h-fit">
+        <h2 class="text-lg font-bold text-slate-900 mb-4 border-b pb-2">Raise Service Request</h2>
+        <form id="createRequestForm" onsubmit="handleCreateRequest(event)" class="space-y-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Requester</label>
+            <select id="requester_id" class="w-full text-sm border rounded-lg p-2 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500">
+              <option value="1">Alice Employee (Requester)</option>
+              <option value="2">Bob Requester (Requester)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Category</label>
+            <select id="category_id" class="w-full text-sm border rounded-lg p-2 bg-slate-50 focus:bg-white">
+              <option value="1">Hardware</option>
+              <option value="2">Software</option>
+              <option value="3">Network</option>
+              <option value="4">Access / Permission</option>
+              <option value="5">Email</option>
+              <option value="6">Other</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Priority</label>
+            <select id="priority" class="w-full text-sm border rounded-lg p-2 bg-slate-50 focus:bg-white">
+              <option value="Low">Low (48h SLA)</option>
+              <option value="Medium" selected>Medium (24h SLA)</option>
+              <option value="High">High (8h SLA)</option>
+              <option value="Critical">Critical (4h SLA)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Subject</label>
+            <input type="text" id="subject" required minlength="3" placeholder="Brief issue title" class="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+            <textarea id="description" required minlength="5" rows="3" placeholder="Provide full context..." class="w-full text-sm border rounded-lg p-2 focus:ring-2 focus:ring-indigo-500"></textarea>
+          </div>
+          <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg text-sm shadow transition">
+            Submit Request
+          </button>
+        </form>
+      </div>
+
+      <!-- Right Column: Requests List -->
+      <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-2 space-y-4">
+        <div class="flex justify-between items-center border-b pb-3">
+          <h2 class="text-lg font-bold text-slate-900">All Service Requests</h2>
+          <button onclick="loadDashboard()" class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold">Refresh ↻</button>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-600">
+            <thead class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <tr>
+                <th class="py-2.5 px-3">ID</th>
+                <th class="py-2.5 px-3">Subject</th>
+                <th class="py-2.5 px-3">Priority</th>
+                <th class="py-2.5 px-3">Status</th>
+                <th class="py-2.5 px-3">Assignee</th>
+                <th class="py-2.5 px-3">SLA Status</th>
+                <th class="py-2.5 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody id="requestsTableBody" class="divide-y divide-slate-100">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Ticket Detail Modal -->
+    <div id="ticketModal" class="hidden fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-start border-b pb-3">
+          <div>
+            <h3 class="text-lg font-bold text-slate-900" id="modalTitle">Ticket Details</h3>
+            <p class="text-xs text-slate-400" id="modalSub">ID: #</p>
+          </div>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold">&times;</button>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-3 rounded-lg">
+          <div><span class="font-semibold text-slate-500">Requester:</span> <span id="modalRequester">-</span></div>
+          <div><span class="font-semibold text-slate-500">Category:</span> <span id="modalCategory">-</span></div>
+          <div><span class="font-semibold text-slate-500">Current Status:</span> <span id="modalStatus" class="font-bold">-</span></div>
+          <div><span class="font-semibold text-slate-500">SLA Due:</span> <span id="modalSlaDue">-</span></div>
+          <div class="col-span-2"><span class="font-semibold text-slate-500">Description:</span> <p id="modalDesc" class="mt-1 text-slate-700 bg-white p-2 rounded border">-</p></div>
+          <div id="modalResolutionContainer" class="col-span-2 hidden">
+            <span class="font-semibold text-slate-500">Resolution Details:</span>
+            <p id="modalResolution" class="mt-1 text-emerald-700 bg-emerald-50 p-2 rounded border border-emerald-200"></p>
+          </div>
+        </div>
+
+        <!-- Action Section: Assign & Transitions -->
+        <div id="modalActions" class="space-y-3 border-t pt-3">
+          <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Manage Request</h4>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- Assignment -->
+            <div class="space-y-1">
+              <label class="text-xs font-semibold text-slate-600">Assign IT Specialist</label>
+              <div class="flex space-x-2">
+                <select id="modalAssigneeSelect" class="text-xs border rounded p-1.5 flex-1 bg-white">
+                  <option value="3">Charlie IT Specialist</option>
+                  <option value="4">Diana IT Specialist</option>
+                  <option value="5">Evan IT Manager</option>
+                </select>
+                <button onclick="submitAssignment()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded hover:bg-slate-700">Assign</button>
+              </div>
+            </div>
+
+            <!-- Transition -->
+            <div class="space-y-1">
+              <label class="text-xs font-semibold text-slate-600">Update Status</label>
+              <div class="flex space-x-2">
+                <select id="modalStatusSelect" onchange="toggleResolutionInput()" class="text-xs border rounded p-1.5 flex-1 bg-white">
+                  <option value="In Progress">In Progress</option>
+                  <option value="On Hold">On Hold</option>
+                  <option value="Resolved">Resolved</option>
+                  <option value="Closed">Closed</option>
+                </select>
+                <button onclick="submitStatusUpdate()" class="bg-indigo-600 text-white text-xs px-3 py-1.5 rounded hover:bg-indigo-500">Update</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="resolutionInputBox" class="hidden space-y-1">
+            <label class="text-xs font-semibold text-emerald-700">Resolution Summary (Required to Resolve):</label>
+            <input type="text" id="modalResolutionInput" placeholder="How was this issue resolved?" class="w-full text-xs border rounded p-2 focus:ring-1 focus:ring-emerald-500"/>
+          </div>
+        </div>
+
+        <!-- History Audit Log -->
+        <div class="border-t pt-3">
+          <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Audit History</h4>
+          <div id="modalHistoryList" class="space-y-1 text-xs max-h-36 overflow-y-auto"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let activeTicketId = null;
+
+    async function loadDashboard() {
+      // 1. Fetch Metrics
+      try {
+        const mRes = await fetch('/reports/dashboard');
+        const metrics = await mRes.json();
+        document.getElementById('metric-total').innerText = metrics.total_requests;
+        document.getElementById('metric-open').innerText = metrics.total_open_requests;
+        document.getElementById('metric-unassigned').innerText = metrics.total_unassigned_requests;
+        document.getElementById('metric-breached').innerText = metrics.total_sla_breached;
+      } catch (err) {
+        console.error("Failed to load metrics", err);
+      }
+
+      // 2. Fetch Requests
+      try {
+        const rRes = await fetch('/requests');
+        const requests = await rRes.json();
+        const tbody = document.getElementById('requestsTableBody');
+        tbody.innerHTML = '';
+
+        requests.forEach(req => {
+          const tr = document.createElement('tr');
+          tr.className = "hover:bg-slate-50 transition";
+
+          // Priority badge
+          const priorityColors = {
+            'Low': 'bg-slate-100 text-slate-700',
+            'Medium': 'bg-blue-100 text-blue-700',
+            'High': 'bg-amber-100 text-amber-700',
+            'Critical': 'bg-rose-100 text-rose-700'
+          };
+          
+          // SLA status badge
+          let slaBadge = 'bg-slate-100 text-slate-600';
+          if (req.sla_status === 'Within SLA') slaBadge = 'bg-emerald-100 text-emerald-700';
+          if (req.sla_status === 'Approaching SLA Breach') slaBadge = 'bg-amber-100 text-amber-800';
+          if (req.sla_status === 'SLA Breached') slaBadge = 'bg-rose-100 text-rose-800 font-bold';
+
+          tr.innerHTML = `
+            <td class="py-3 px-3 font-semibold text-slate-900">#${req.id}</td>
+            <td class="py-3 px-3">
+              <span class="font-medium text-slate-800 block">${req.subject}</span>
+              <span class="text-xs text-slate-400">${req.category ? req.category.name : ''}</span>
+            </td>
+            <td class="py-3 px-3">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded-full ${priorityColors[req.priority]}">${req.priority}</span>
+            </td>
+            <td class="py-3 px-3">
+              <span class="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700">${req.status}</span>
+            </td>
+            <td class="py-3 px-3 text-xs text-slate-600">
+              ${req.assignee ? req.assignee.name : '<span class="text-amber-500 font-medium">Unassigned</span>'}
+            </td>
+            <td class="py-3 px-3">
+              <span class="text-xs font-medium px-2 py-0.5 rounded ${slaBadge}">${req.sla_status || 'N/A'}</span>
+            </td>
+            <td class="py-3 px-3 text-right">
+              <button onclick="openModal(${req.id})" class="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 py-1 rounded font-semibold transition">
+                Manage
+              </button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (err) {
+        console.error("Failed to load requests", err);
+      }
+    }
+
+    async function handleCreateRequest(e) {
+      e.preventDefault();
+      const payload = {
+        requester_id: parseInt(document.getElementById('requester_id').value),
+        category_id: parseInt(document.getElementById('category_id').value),
+        priority: document.getElementById('priority').value,
+        subject: document.getElementById('subject').value,
+        description: document.getElementById('description').value
+      };
+
+      const res = await fetch('/requests', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        document.getElementById('subject').value = '';
+        document.getElementById('description').value = '';
+        loadDashboard();
+      } else {
+        const error = await res.json();
+        alert('Error creating request: ' + (error.detail || JSON.stringify(error)));
+      }
+    }
+
+    async function openModal(id) {
+      activeTicketId = id;
+      const res = await fetch(`/requests/${id}`);
+      const data = await res.json();
+
+      document.getElementById('modalTitle').innerText = data.subject;
+      document.getElementById('modalSub').innerText = `ID: #${data.id} • Created: ${new Date(data.created_at).toLocaleString()}`;
+      document.getElementById('modalRequester').innerText = data.requester ? data.requester.name : 'Unknown';
+      document.getElementById('modalCategory').innerText = data.category ? data.category.name : '-';
+      document.getElementById('modalStatus').innerText = data.status;
+      document.getElementById('modalSlaDue').innerText = data.sla_due_at ? new Date(data.sla_due_at).toLocaleString() : 'N/A';
+      document.getElementById('modalDesc').innerText = data.description;
+
+      const resBox = document.getElementById('modalResolutionContainer');
+      if (data.resolution_details) {
+        resBox.classList.remove('hidden');
+        document.getElementById('modalResolution').innerText = data.resolution_details;
+      } else {
+        resBox.classList.add('hidden');
+      }
+
+      // Hide actions if closed
+      const actionsDiv = document.getElementById('modalActions');
+      if (data.status === 'Closed') {
+        actionsDiv.classList.add('opacity-50', 'pointer-events-none');
+      } else {
+        actionsDiv.classList.remove('opacity-50', 'pointer-events-none');
+      }
+
+      // Load History
+      const hRes = await fetch(`/requests/${id}/history`);
+      const history = await hRes.json();
+      const hContainer = document.getElementById('modalHistoryList');
+      hContainer.innerHTML = '';
+      history.forEach(h => {
+        const item = document.createElement('div');
+        item.className = "flex justify-between py-1 border-b border-slate-100 text-slate-500";
+        item.innerHTML = `<span><strong>${h.action_type}</strong>: ${h.old_value ? h.old_value + ' → ' : ''}${h.new_value || ''}</span><span class="text-[10px] text-slate-400">${new Date(h.timestamp).toLocaleTimeString()}</span>`;
+        hContainer.appendChild(item);
+      });
+
+      document.getElementById('ticketModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('ticketModal').classList.add('hidden');
+      activeTicketId = null;
+    }
+
+    function toggleResolutionInput() {
+      const select = document.getElementById('modalStatusSelect');
+      const box = document.getElementById('resolutionInputBox');
+      if (select.value === 'Resolved') {
+        box.classList.remove('hidden');
+      } else {
+        box.classList.add('hidden');
+      }
+    }
+
+    async function submitAssignment() {
+      const assigneeId = parseInt(document.getElementById('modalAssigneeSelect').value);
+      const res = await fetch(`/requests/${activeTicketId}/assign`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ assignee_id: assigneeId, actor_id: 5 })
+      });
+      if (res.ok) {
+        openModal(activeTicketId);
+        loadDashboard();
+      } else {
+        const err = await res.json();
+        alert('Assignment failed: ' + err.detail);
+      }
+    }
+
+    async function submitStatusUpdate() {
+      const statusVal = document.getElementById('modalStatusSelect').value;
+      const resolution = document.getElementById('modalResolutionInput').value;
+
+      const res = await fetch(`/requests/${activeTicketId}/status`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          new_status: statusVal,
+          actor_id: 5,
+          resolution_details: resolution
+        })
+      });
+
+      if (res.ok) {
+        document.getElementById('modalResolutionInput').value = '';
+        openModal(activeTicketId);
+        loadDashboard();
+      } else {
+        const err = await res.json();
+        alert('Status update failed: ' + err.detail);
+      }
+    }
+
+    // Initial load
+    loadDashboard();
+  </script>
+</body>
+</html>
