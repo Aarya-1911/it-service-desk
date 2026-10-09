@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IT Operations & Triage Workspace</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Immediate Head-Level RBAC Security Gate (Silent Redirect) -->
+  <script>
+    (function enforceAccessControl() {
+      const storedUser = localStorage.getItem('auth_user');
+      if (!storedUser) {
+        window.location.replace('/login');
+        return;
+      }
+
+      try {
+        const user = JSON.parse(storedUser);
+        const rawRole = (typeof user.role === 'object' && user.role !== null) ? user.role.value : user.role;
+        const normalizedRole = String(rawRole || '').trim().toUpperCase();
+
+        // If an employee tries to access agent workspace, silently send them to /employee
+        if (normalizedRole === 'REQUESTER') {
+          window.location.replace('/employee');
+          return;
+        }
+
+        // Only allow IT_AGENT or MANAGER
+        if (normalizedRole !== 'IT_AGENT' && normalizedRole !== 'MANAGER') {
+          window.location.replace('/login');
+          return;
+        }
+      } catch (err) {
+        localStorage.removeItem('auth_user');
+        window.location.replace('/login');
+      }
+    })();
+  </script>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 antialiased">
+
+  <!-- Top Navigation Bar -->
+  <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap justify-between items-center text-white gap-4 shadow-md">
+    <div class="flex items-center gap-3">
+      <div class="h-10 w-10 bg-emerald-500 rounded-lg flex items-center justify-center text-slate-950 font-black text-xl shadow-sm">
+        IT
+      </div>
+      <div>
+        <h1 class="font-bold text-lg leading-tight">IT Operations & Triage Workspace</h1>
+        <p class="text-xs text-slate-400">Incident Triage, Assignee Routing & SLA Control</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4 text-xs">
+      <div class="text-right">
+        <p id="staffNameDisplay" class="font-bold text-white"></p>
+        <span id="staffRoleBadge" class="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-semibold"></span>
+      </div>
+      <button onclick="logout()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg border border-slate-700 transition">
+        Logout
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- KPI Metric Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Tickets</span>
+        <h3 id="statTotal" class="text-3xl font-extrabold text-slate-900 mt-2">0</h3>
+      </div>
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-xs font-bold text-blue-600 uppercase tracking-wider">Open / Active</span>
+        <h3 id="statOpen" class="text-3xl font-extrabold text-blue-600 mt-2">0</h3>
+      </div>
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-xs font-bold text-amber-600 uppercase tracking-wider">Unassigned</span>
+        <h3 id="statUnassigned" class="text-3xl font-extrabold text-amber-600 mt-2">0</h3>
+      </div>
+      <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+        <span class="text-xs font-bold text-rose-600 uppercase tracking-wider">SLA Breached</span>
+        <h3 id="statBreached" class="text-3xl font-extrabold text-rose-600 mt-2">0</h3>
+      </div>
+    </div>
+
+    <!-- Management Queue Table -->
+    <section class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+      <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Incident Triage Queue</h2>
+          <p class="text-xs text-slate-500">Assign agents, progress state machine, and document resolution notes.</p>
+        </div>
+        <button onclick="loadAgentWorkspace()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-lg font-semibold transition">
+          Refresh Queue
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-200 text-slate-500 uppercase tracking-wider bg-slate-50">
+              <th class="py-3 px-3">Ticket ID</th>
+              <th class="py-3 px-3">Subject</th>
+              <th class="py-3 px-3">Priority</th>
+              <th class="py-3 px-3">Requester</th>
+              <th class="py-3 px-3">Assignee</th>
+              <th class="py-3 px-3">Status</th>
+              <th class="py-3 px-3">SLA Due</th>
+              <th class="py-3 px-3 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="agentTicketTable" class="divide-y divide-slate-100 text-slate-700">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Ticket Management Modal -->
+  <div id="manageModal" class="hidden fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 space-y-5">
+      <div class="flex justify-between items-start border-b border-slate-100 pb-3">
+        <div>
+          <h3 id="modalTicketTitle" class="font-bold text-base text-slate-900">Manage Ticket</h3>
+          <p id="modalTicketSub" class="text-xs text-slate-500 mt-0.5 truncate max-w-sm"></p>
+        </div>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">&times;</button>
+      </div>
+
+      <!-- Assignee Section -->
+      <div class="p-4 bg-slate-50 rounded-lg space-y-2 border border-slate-200">
+        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">Assign Technician (RBAC Protected)</label>
+        <div class="flex gap-2">
+          <select id="modalAssignee" class="text-xs flex-1 border border-slate-300 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="3">Charlie (IT Specialist - Agent)</option>
+            <option value="4">Dana (Support Agent - Agent)</option>
+            <option value="5">Evan (IT Manager - Manager)</option>
+            <option value="1">Alice (Requester - Negative Test)</option>
+          </select>
+          <button onclick="handleAssign()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-4 py-2 rounded-lg font-medium transition">
+            Assign
+          </button>
+        </div>
+      </div>
+
+      <!-- State Machine & Resolution Section -->
+      <div class="p-4 bg-slate-50 rounded-lg space-y-3 border border-slate-200">
+        <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider">Update State Machine</label>
+        <div>
+          <select id="modalStatus" onchange="toggleResolutionBox()" class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-emerald-500">
+            <option value="In Progress">In Progress</option>
+            <option value="Resolved">Resolved</option>
+            <option value="Closed">Closed</option>
+          </select>
+        </div>
+
+        <div id="resolutionBox" class="hidden space-y-1.5">
+          <label class="block text-xs font-semibold text-slate-700">
+            Resolution Details <span class="text-rose-500">* (Mandatory for Resolved)</span>
+          </label>
+          <textarea id="modalResolutionNotes" rows="3" class="w-full text-xs border border-slate-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="Describe root cause and the corrective action applied..."></textarea>
+        </div>
+
+        <button onclick="handleStatusUpdate()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs py-2.5 rounded-lg font-semibold transition">
+          Confirm State Transition
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Initialize staff details from validated session
+    const activeStaff = JSON.parse(localStorage.getItem('auth_user') || '{}');
+    if (activeStaff.name) {
+      document.getElementById('staffNameDisplay').textContent = activeStaff.name;
+      document.getElementById('staffRoleBadge').textContent = activeStaff.role;
+    }
+
+    function logout() {
+      localStorage.removeItem('auth_user');
+      window.location.replace('/login');
+    }
+
+    let activeTicketId = null;
+
+    async function loadAgentWorkspace() {
+      try {
+        const res = await fetch('/requests');
+        if (!res.ok) throw new Error('Failed to load tickets');
+        const tickets = await res.json();
+
+        const now = new Date();
+
+        // Calculate KPI Metrics
+        const total = tickets.length;
+        const open = tickets.filter(t => t.status !== 'Resolved' && t.status !== 'Closed').length;
+        const unassigned = tickets.filter(t => !t.assignee_id).length;
+        const breached = tickets.filter(t => {
+          if (t.status === 'Resolved' || t.status === 'Closed') return false;
+          if (t.sla_status === 'Breached') return true;
+          return t.sla_due_at && new Date(t.sla_due_at) < now;
+        }).length;
+
+        document.getElementById('statTotal').innerText = total;
+        document.getElementById('statOpen').innerText = open;
+        document.getElementById('statUnassigned').innerText = unassigned;
+        document.getElementById('statBreached').innerText = breached;
+
+        const tbody = document.getElementById('agentTicketTable');
+        tbody.innerHTML = '';
+
+        if (tickets.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="py-8 text-center text-slate-400">No requests found in queue.</td></tr>`;
+          return;
+        }
+
+        const priorityColors = {
+          'Critical': 'bg-red-100 text-red-700 border border-red-200 font-bold',
+          'High':     'bg-orange-100 text-orange-700 border border-orange-200 font-semibold',
+          'Medium':   'bg-amber-100 text-amber-800 border border-amber-200 font-medium',
+          'Low':      'bg-slate-100 text-slate-700 border border-slate-200 font-medium'
+        };
+
+        tickets.forEach(t => {
+          const isBreached = (t.status !== 'Resolved' && t.status !== 'Closed') && 
+                             (t.sla_status === 'Breached' || (t.sla_due_at && new Date(t.sla_due_at) < now));
+
+          const slaBadge = isBreached
+            ? `<span class="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded text-[10px]">SLA BREACHED</span>`
+            : `<span class="text-slate-500">${t.sla_due_at ? new Date(t.sla_due_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'N/A'}</span>`;
+
+          const statusColors = {
+            'New': 'bg-slate-100 text-slate-700',
+            'Assigned': 'bg-blue-100 text-blue-700',
+            'In Progress': 'bg-amber-100 text-amber-700',
+            'Resolved': 'bg-emerald-100 text-emerald-700',
+            'Closed': 'bg-purple-100 text-purple-700'
+          };
+          const statusBadge = `<span class="px-2 py-0.5 rounded-full font-medium ${statusColors[t.status] || 'bg-slate-100 text-slate-700'}">${t.status}</span>`;
+          const priorityBadge = `<span class="px-2 py-0.5 rounded-full text-[11px] ${priorityColors[t.priority] || 'bg-slate-100 text-slate-700'}">${t.priority}</span>`;
+
+          const assigneeDisplay = t.assignee 
+            ? `${t.assignee.name} (#${t.assignee.id})` 
+            : (t.assignee_id ? `Agent #${t.assignee_id}` : `<span class="text-amber-600 font-semibold">Unassigned</span>`);
+
+          const requesterDisplay = t.requester 
+            ? `${t.requester.name} (#${t.requester.id})` 
+            : `User #${t.requester_id}`;
+
+          tbody.innerHTML += `
+            <tr class="hover:bg-slate-50 border-b border-slate-100 transition">
+              <td class="py-3 px-3 font-bold text-slate-900">#${t.id}</td>
+              <td class="py-3 px-3 font-medium text-slate-900">${t.subject}</td>
+              <td class="py-3 px-3">${priorityBadge}</td>
+              <td class="py-3 px-3 text-slate-500">${requesterDisplay}</td>
+              <td class="py-3 px-3">${assigneeDisplay}</td>
+              <td class="py-3 px-3">${statusBadge}</td>
+              <td class="py-3 px-3">${slaBadge}</td>
+              <td class="py-3 px-3 text-right">
+                <button onclick="openModal(${t.id}, '${escapeHtml(t.subject)}', '${t.status}')" class="bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-3 py-1 rounded text-xs font-semibold transition">
+                  Manage
+                </button>
+              </td>
+            </tr>
+          `;
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function openModal(id, subject, status) {
+      activeTicketId = id;
+      document.getElementById('modalTicketTitle').innerText = `Manage Ticket #${id}`;
+      document.getElementById('modalTicketSub').innerText = subject;
+      document.getElementById('modalStatus').value = status === 'New' ? 'In Progress' : status;
+      document.getElementById('modalResolutionNotes').value = '';
+      toggleResolutionBox();
+      document.getElementById('manageModal').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      document.getElementById('manageModal').classList.add('hidden');
+    }
+
+    function toggleResolutionBox() {
+      const status = document.getElementById('modalStatus').value;
+      const box = document.getElementById('resolutionBox');
+      if (status === 'Resolved') {
+        box.classList.remove('hidden');
+      } else {
+        box.classList.add('hidden');
+      }
+    }
+
+    async function handleAssign() {
+      const assigneeId = parseInt(document.getElementById('modalAssignee').value);
+
+      try {
+        const res = await fetch(`/requests/${activeTicketId}/assign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assignee_id: assigneeId, actor_id: activeStaff.id })
+        });
+
+        if (res.ok) {
+          alert(`Ticket #${activeTicketId} successfully assigned!`);
+          closeModal();
+          loadAgentWorkspace();
+        } else {
+          const err = await res.json();
+          alert('RBAC Violation / Error: ' + (err.detail || 'Assignment rejected by system policy'));
+        }
+      } catch (e) {
+        alert('Network error while assigning ticket.');
+      }
+    }
+
+    async function handleStatusUpdate() {
+      const newStatus = document.getElementById('modalStatus').value;
+      const notes = document.getElementById('modalResolutionNotes').value.trim();
+
+      if (newStatus === 'Resolved' && !notes) {
+        alert('Resolution details are mandatory when resolving a ticket.');
+        return;
+      }
+
+      const payload = {
+        new_status: newStatus,
+        actor_id: activeStaff.id,
+        resolution_details: notes ? notes : null
+      };
+
+      try {
+        const res = await fetch(`/requests/${activeTicketId}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          alert(`Ticket #${activeTicketId} transitioned to "${newStatus}"!`);
+          closeModal();
+          loadAgentWorkspace();
+        } else {
+          const err = await res.json();
+          alert('Transition Error: ' + (err.detail || 'State transition denied by business rules'));
+        }
+      } catch (e) {
+        alert('Network error while updating status.');
+      }
+    }
+
+    function escapeHtml(text) {
+      return text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    window.onload = loadAgentWorkspace;
+  </script>
+</body>
+</html>

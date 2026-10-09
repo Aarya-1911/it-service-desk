@@ -1,29 +1,37 @@
+import os
 from typing import List, Optional
 from fastapi import FastAPI, Depends, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db, engine, Base
-from app.models import StatusEnum, PriorityEnum
+from app.models import StatusEnum, PriorityEnum, User, Category
 from app.schemas import (
-    ServiceRequestCreate, ServiceRequestOut, ServiceRequestAssign,
-    ServiceRequestStatusUpdate, CommentCreate, CommentOut,
-    RequestHistoryOut, UserOut, CategoryOut
+    ServiceRequestCreate,
+    ServiceRequestOut,
+    ServiceRequestAssign,
+    ServiceRequestStatusUpdate,
+    CommentCreate,
+    CommentOut,
+    RequestHistoryOut,
+    UserOut,
+    CategoryOut,
 )
 from app import crud
 
-# Ensure tables are created
+# 1. Initialize Database Tables
 Base.metadata.create_all(bind=engine)
 
+# 2. Initialize FastAPI Application
 app = FastAPI(
     title="IT Service Request Management System",
     description="REST API for managing IT Service Requests, SLAs, Assignments, and Lifecycles.",
-    version="1.0.0"
+    version="1.0.0",
 )
 
-# Enable CORS for browser access
+# 3. Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,28 +40,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Mount Static Files & Serve Frontend Dashboard ---
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/", tags=["Dashboard"])
-def get_dashboard():
-    return FileResponse("static/index.html")
+# 4. Mount Static Directory
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# --- Metadata Endpoints ---
+# ==============================================================================
+# 5. FRONTEND PAGE ROUTES
+# ==============================================================================
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """Redirect base URL to the Login Portal."""
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login", include_in_schema=False)
+def get_login_page():
+    """Serves the Unified Role-Based Login Screen."""
+    return FileResponse("static/login.html")
+
+
+@app.get("/employee", include_in_schema=False)
+def get_employee_portal():
+    """Serves the Employee Self-Service Portal."""
+    return FileResponse("static/employee.html")
+
+
+@app.get("/agent", include_in_schema=False)
+def get_agent_workspace():
+    """Serves the IT Staff Workspace."""
+    return FileResponse("static/agent.html")
+
+
+# ==============================================================================
+# 6. METADATA ENDPOINTS
+# ==============================================================================
+
 @app.get("/users", response_model=List[UserOut], tags=["Users"])
 def get_users(db: Session = Depends(get_db)):
-    from app.models import User
     return db.query(User).all()
 
 
 @app.get("/categories", response_model=List[CategoryOut], tags=["Categories"])
 def get_categories(db: Session = Depends(get_db)):
-    from app.models import Category
     return db.query(Category).all()
 
 
-# --- Service Request Endpoints ---
+# ==============================================================================
+# 7. SERVICE REQUEST ENDPOINTS
+# ==============================================================================
+
 @app.post("/requests", response_model=ServiceRequestOut, status_code=status.HTTP_201_CREATED, tags=["Requests"])
 def create_request(req_in: ServiceRequestCreate, db: Session = Depends(get_db)):
     """Create a new service request. Auto-calculates SLA due date based on priority."""
@@ -65,7 +102,7 @@ def list_requests(
     status_filter: Optional[StatusEnum] = Query(None, alias="status"),
     priority_filter: Optional[PriorityEnum] = Query(None, alias="priority"),
     assignee_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Retrieve service requests with optional filters for status, priority, and assignee."""
     return crud.get_requests(db, status_filter, priority_filter, assignee_id)
@@ -77,7 +114,10 @@ def get_request(req_id: int, db: Session = Depends(get_db)):
     return crud.get_request_by_id(db, req_id)
 
 
-# --- Lifecycle & Actions ---
+# ==============================================================================
+# 8. LIFECYCLE & WORKFLOW
+# ==============================================================================
+
 @app.post("/requests/{req_id}/assign", response_model=ServiceRequestOut, tags=["Workflow"])
 def assign_request(req_id: int, assign_in: ServiceRequestAssign, db: Session = Depends(get_db)):
     """Assign or reassign an IT ticket to an IT Agent or Manager."""
@@ -94,7 +134,10 @@ def update_status(req_id: int, update_in: ServiceRequestStatusUpdate, db: Sessio
     return crud.update_status(db, req_id, update_in)
 
 
-# --- Comments & History ---
+# ==============================================================================
+# 9. COMMENTS & AUDIT HISTORY
+# ==============================================================================
+
 @app.post("/requests/{req_id}/comments", response_model=CommentOut, status_code=status.HTTP_201_CREATED, tags=["Collaboration"])
 def add_comment(req_id: int, comment_in: CommentCreate, db: Session = Depends(get_db)):
     """Add a communication update/comment to a request."""
@@ -113,7 +156,10 @@ def get_history(req_id: int, db: Session = Depends(get_db)):
     return crud.get_history(db, req_id)
 
 
-# --- Reports & Dashboard ---
+# ==============================================================================
+# 10. REPORTS & DASHBOARD
+# ==============================================================================
+
 @app.get("/reports/dashboard", tags=["Reports"])
 def dashboard_metrics(db: Session = Depends(get_db)):
     """Management dashboard report: ticket counts, priority, category, SLA breaches."""

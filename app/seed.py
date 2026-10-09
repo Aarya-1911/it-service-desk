@@ -37,6 +37,9 @@ def init_and_seed():
                 User(name="Alice Employee", email="alice@company.com", role=RoleEnum.REQUESTER),
                 User(name="Bob Requester", email="bob@company.com", role=RoleEnum.REQUESTER),
                 User(name="John Requester", email="john@company.com", role=RoleEnum.REQUESTER),
+                User(name="Ana Requester", email="ana@company.com", role=RoleEnum.REQUESTER),
+                User(name="Priya Requester", email="priya@company.com", role=RoleEnum.REQUESTER),
+                # User(name="Jonny IT Manager", email="jonny@company.com", role=RoleEnum.IT_AGENT),
                 User(name="Charlie IT Specialist", email="charlie@itdesk.com", role=RoleEnum.IT_AGENT),
                 User(name="Diana IT Specialist", email="diana@itdesk.com", role=RoleEnum.IT_AGENT),
                 User(name="Evan IT Manager", email="evan@itdesk.com", role=RoleEnum.MANAGER)
